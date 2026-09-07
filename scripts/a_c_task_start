@@ -60,8 +60,12 @@
 #                  script's own gate, NOT the Claude session's approvals; for a
 #                  Claude session's approvals are already hands-off by default;
 #                  see --bypass below to remove even the auto-mode guardrail.
-#      --bypass    Launch Claude with NO permission checks at all
+#      --bypass    Ask for NO permission checks at all
 #                  (--dangerously-skip-permissions); --dangerous is an alias.
+#                  Honored only where a human has accepted bypass once by hand;
+#                  otherwise it is downgraded to the normal mode automatically
+#                  (it would otherwise hang on a confirmation dialog). You do not
+#                  need bypass to run unattended: auto mode never waits either.
 #                  Implies -c. Without it the default is --permission-mode auto,
 #                  which also never waits for input but still refuses genuinely
 #                  risky actions (the refusal goes to the model, it does not

@@ -124,6 +124,81 @@ if [[ ! -d "$dir" ]]; then
     exit 1
 fi
 
+# Bypass is requested but has never been accepted on this machine? Downgrade it.
+#
+# _authorize_dir sets bypassPermissionsModeAccepted for THIS project only. The
+# machine-wide switch is a human decision, and until a human has made it claude
+# opens "Bypass Permissions mode on?" and waits for a keypress. An unattended tab
+# then hangs forever with no clue why.
+#
+# This used to print a warning and launch anyway. That is a guard that describes
+# a failure instead of preventing it: the message scrolls past, the tab hangs,
+# and the next person spends an hour finding it. So substitute auto mode instead.
+# Auto never waits for a human. A genuinely risky action is refused and the
+# refusal goes back to the model, which is told "no" and carries on. Downgrading
+# can only reduce what the child is allowed to do, so it is always safe to do
+# unasked.
+want_bypass=0
+if [[ ${#passthrough[@]} -gt 0 ]]; then
+    for _cr_a in "${passthrough[@]}"; do
+        case "$_cr_a" in
+            --dangerously-skip-permissions) want_bypass=1 ;;
+            bypassPermissions|--permission-mode=bypassPermissions) want_bypass=1 ;;
+        esac
+    done
+fi
+
+_cr_machine_ok=unknown
+if [[ $want_bypass -eq 1 ]] && command -v python3 >/dev/null 2>&1; then
+    _cr_machine_ok="$(A_CJ="${A_CLAUDE_JSON:-$HOME/.claude.json}" python3 - <<'PY2' 2>/dev/null || true
+import json, os
+try:
+    with open(os.environ["A_CJ"]) as f:
+        print("yes" if json.load(f).get("bypassPermissionsModeAccepted") is True else "no")
+except Exception:
+    print("unknown")
+PY2
+)"
+fi
+
+if [[ $want_bypass -eq 1 && "$_cr_machine_ok" = "no" ]]; then
+    # Same choice as a_s_task_common.sh's a_task_permission_mode, inlined because
+    # this script is documented as safe to run standalone and sources nothing.
+    # "auto" is absent from older claude builds and an unknown mode aborts at
+    # startup, so ask the binary what it accepts before naming one.
+    if claude --help 2>/dev/null | grep -q '"auto"'; then
+        _cr_fallback_mode=auto
+    else
+        _cr_fallback_mode=acceptEdits
+    fi
+
+    # Drop every spelling of the bypass request, including the two-token
+    # `--permission-mode bypassPermissions`, while leaving any other
+    # --permission-mode value the caller passed deliberately.
+    _cr_filtered=()
+    _cr_n=${#passthrough[@]}
+    _cr_i=0
+    while [[ $_cr_i -lt $_cr_n ]]; do
+        _cr_a="${passthrough[$_cr_i]}"
+        case "$_cr_a" in
+            --dangerously-skip-permissions|--permission-mode=bypassPermissions|bypassPermissions)
+                _cr_i=$((_cr_i + 1)); continue ;;
+            --permission-mode)
+                if [[ $((_cr_i + 1)) -lt $_cr_n && "${passthrough[$((_cr_i + 1))]}" = "bypassPermissions" ]]; then
+                    _cr_i=$((_cr_i + 2)); continue
+                fi ;;
+        esac
+        _cr_filtered+=("$_cr_a")
+        _cr_i=$((_cr_i + 1))
+    done
+    passthrough=(${_cr_filtered[@]+"${_cr_filtered[@]}"} --permission-mode "$_cr_fallback_mode")
+    want_bypass=0
+
+    printf '%s: bypass has never been accepted on this machine, so it would open a\n' "$prog" >&2
+    printf '  confirmation dialog and wait. Running in %s mode instead, which never waits.\n' "$_cr_fallback_mode" >&2
+    printf '  To get real bypass, accept it once by hand:  claude --dangerously-skip-permissions\n' >&2
+fi
+
 # Build the claude argv. The prompt is the single positional; --remote-control
 # goes last (with no name, or with the name right after it) so the optional-value
 # flag never swallows the prompt.
@@ -157,39 +232,6 @@ cd "$dir"
 # Unattended launch: pre-authorize this dir so Claude honors the requested mode
 # instead of stalling on / downgrading at its trust + bypass gates. Seed the
 # global bypass acceptance only when the launch actually asks for bypass.
-want_bypass=0
-for a in ${passthrough[@]+"${passthrough[@]}"}; do
-    case "$a" in
-        --dangerously-skip-permissions) want_bypass=1 ;;
-        bypassPermissions|--permission-mode=bypassPermissions) want_bypass=1 ;;
-    esac
-done
-
-# A bypass launch stalls on a dialog we deliberately refuse to auto-accept.
-# _authorize_dir sets bypassPermissionsModeAccepted for THIS project only; the
-# machine-wide switch is a human decision. Until a human has made it, claude
-# opens "Bypass Permissions mode on?" and waits for a keypress, so an unattended
-# tab hangs with no clue why. Say so before launching rather than leaving someone
-# to find a silently waiting tab later. Advisory only: never blocks the launch.
-if [ "$want_bypass" -eq 1 ] && command -v python3 >/dev/null 2>&1; then
-    _cr_machine_ok="$(A_CJ="${A_CLAUDE_JSON:-$HOME/.claude.json}" python3 - <<'PY2' 2>/dev/null || true
-import json, os
-try:
-    with open(os.environ["A_CJ"]) as f:
-        print("yes" if json.load(f).get("bypassPermissionsModeAccepted") is True else "no")
-except Exception:
-    print("unknown")
-PY2
-)"
-    if [ "$_cr_machine_ok" = "no" ]; then
-        printf '%s: WARNING: this launch asks for --dangerously-skip-permissions, but bypass\n' "$prog" >&2
-        printf '  has never been accepted on this machine, so the session will OPEN A CONFIRMATION\n' >&2
-        printf '  DIALOG AND WAIT instead of running unattended.\n' >&2
-        printf '  Either accept it once by hand:  claude --dangerously-skip-permissions\n' >&2
-        printf '  or drop the bypass and let it run in auto mode, which does not wait.\n' >&2
-    fi
-fi
-
 if [[ $dry_run -eq 1 ]]; then
     printf '%s: would run in %s:\n  ' "$prog" "$PWD"
     printf '%q ' "${cmd[@]}"

@@ -40,6 +40,13 @@ prompt you cannot see. Symptom: the child writes files, then goes quiet forever.
 with `--permission-mode bypassPermissions` is blocked, and rightly so. Give the
 child a scoped allowlist instead.
 
+Separately, bypass only works at all where a human has accepted it once by hand
+on that machine. Everywhere else claude opens a confirmation dialog and waits,
+which is invisible in a detached tab. `a_c_claude_remote` now detects that and
+substitutes the normal mode rather than launching into the dialog, so asking for
+bypass is no longer a way to hang a child. Do not reach for bypass to make a
+child unattended: auto mode already never waits for a human.
+
 **`--allowedTools` is variadic, so it eats the prompt.** Written as
 `--allowedTools 'Bash(python3:*)' "$PROMPT"`, the prompt is consumed as another
 tool name and the child starts with nothing to do. Pass permissions in a

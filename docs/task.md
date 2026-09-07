@@ -107,7 +107,12 @@ Two knobs:
 
 - `A_TASK_PERMISSION_MODE=<mode>` changes the default, per run or per machine.
 - `--bypass` removes permission checks entirely
-  (`--dangerously-skip-permissions`).
+  (`--dangerously-skip-permissions`), but only on a machine where a human has
+  accepted bypass once by hand. Everywhere else it is **downgraded to the normal
+  mode automatically**, with a line saying so, because claude would otherwise open
+  "Bypass Permissions mode on?" and wait for a keypress that an unattended tab
+  never gets. You do not need to remember which machine is which, and you do not
+  need to accept bypass to run unattended: auto mode already never waits.
 
 On a machine whose `claude` is too old to know `auto`, the default falls back to
 `acceptEdits` rather than failing at startup, because an unrecognised mode aborts
