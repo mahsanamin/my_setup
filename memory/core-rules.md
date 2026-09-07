@@ -63,6 +63,28 @@ and without offering it as an option first. This covers the everyday phrasing: "
 If it returns `ESCALATE: sonnet`, re-spawn it on sonnet with its partial findings rather than
 finishing the search yourself. Relay its answer; do not re-run the search to check it.
 
+### Task work gets its own session, not a subagent
+
+The section above sends retrieval to a subagent. This one is its other half, and the two are read
+together: **what decides the answer is what the work produces, not how big it is.**
+
+| The work produces | Who does it |
+|---|---|
+| An answer needed to keep working: a search, a lookup, a read-only verification, a bounded exploration | a subagent (see above) |
+| **A change in a repo** — writes code, commits, ends in a PR or a push | **its own session**, started with `a_c_task_start -c -z <session>`, one per lane |
+
+The test is one question: **does this end in a diff someone reviews?** If yes it is a task lane, and
+a task lane gets a real session in a tab. Never an in-process subagent, however well-scoped the
+brief is.
+
+Three things a subagent cannot give a task lane, and all three are the point of handing work over:
+it is visible while it runs, it can be steered mid-flight, and it outlives the session that started
+it. A subagent has none of those — the work happens where nobody can see it and arrives only as a
+final report.
+
+"Hand this over", "run these in parallel", and "keep an eye on them" are asking for sessions. Read
+them that way even when the work looks like something a subagent could carry.
+
 ### Knowledge placement — where a new fact goes
 
 Project-specific guidance belongs **in that project's repo**. `AGENTS.md` is canonical;

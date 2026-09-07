@@ -195,8 +195,14 @@ a_c_task_start -y -r myrepo -t 942 -f "list filter" -b main -c -p "read the tick
 
 ## Branch naming
 
+**A ticket is mandatory.** Passed with `-t` it is normalized; omitted, the script prompts and
+**cancels on an empty answer**, so there is no unticketed path. Maintenance work with no natural
+ticket needs one created first — `a_c_idea_start` takes no ticket but makes a scratch directory,
+not a repo worktree, so it is not a substitute.
+
 `<TICKET>-<feature-slug>`. The ticket is normalized: `PROJ-123`, `proj123`, a bare
-`123` (default project key `PROJ`, override with `A_TASK_DEFAULT_KEY`), or a pasted
+`123` (which takes the default project key — `A_TASK_DEFAULT_KEY` overrides it, and the fallback
+is set in `scripts/a_s_task_common.sh`, so read it there rather than assuming), or a pasted
 Jira browse URL like `https://your-org.atlassian.net/browse/PROJ-1009` all resolve
 to the key. The feature text is slugified (lowercased, non-alphanumeric runs
 collapse to single dashes). Example: ticket `123` + "Add login page" ->
