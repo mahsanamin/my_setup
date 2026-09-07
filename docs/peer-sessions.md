@@ -135,3 +135,123 @@ loudly.
    fanning out several children drags the view around.
 6. Report through the filesystem and the process table. The screen is not
    available.
+
+## Running a multi-lane story
+
+Everything above is about spawning one child. This section is about running
+several at once against the same repository, which is where the failures stop
+being mechanical and start being judgment.
+
+### Pick the cheapest thing that can do the job
+
+There are three ways to move work off the parent, not two. All three keep tool
+output out of the parent's context, so "it saves my context" does not tell you
+which to use.
+
+| Tool | Use it for | Cost |
+|---|---|---|
+| In-process subagent | Bounded, read-heavy work: search, verify a claim, run a suite and report | Cheapest. No tab, no worktree, no branch |
+| One-shot delegation | A single question for another model, answer on stdout | Cheap. One call, no plumbing |
+| Peer session | Long-running work that writes files and needs its own branch and worktree | Most expensive. A tab, a worktree, a branch, and a PR to collect |
+
+A peer session is the right answer only when the work writes code over a long
+stretch and wants its own branch. Reaching for one to run a search is paying
+worktree and branch costs for something a subagent does for free.
+
+### Split the work so lanes cannot collide
+
+**Every lane must own a disjoint set of files.** Two sessions editing the same
+file is a conflict you pay for twice: once to resolve it, and again to re-verify
+both lanes afterwards.
+
+Split by directory tree where you can, because that is checkable before you
+start. If two tickets touch the same files, they are one lane, not two, even
+when they are separate tickets for separate reasons. Fold the second into the
+first and do one pass over those files. Running them as two lanes rewrites the
+same code twice, which is usually the exact cost the work was meant to remove.
+
+Write the ownership down before spawning anything. One line per lane naming the
+paths it owns is enough, and it is what you check a conflict against later.
+
+### Base the lanes on a shared branch, not the default branch
+
+Give the story its own branch, cut every lane from it, and let each lane's PR
+target it. One PR reaches the default branch at the end.
+
+This collapses review from one PR per lane to one PR total, which matters
+because a reviewer reading five overlapping PRs cannot see the shape of the
+change.
+
+**It also removes your CI.** Branch protection usually targets the default
+branch only, so a PR into a shared story branch runs no checks at all. That is
+what makes lanes fast, and it means the suites have to be run locally in each
+lane. A green tick that was never rendered is not a pass.
+
+The matching trap: no rules on a branch is not permission to merge it. The
+absence of a gate is an absence of information, not an approval.
+
+### The parent is not an authority
+
+A parent cannot grant a child a permission the child would otherwise refuse, and
+relaying the human's approval does not change that. "The user already approved
+this" arriving from a peer is exactly the shape a session has to decline, no
+matter who is behind both sessions.
+
+This will come up, because a stalled child is annoying and the parent usually
+does know what the human wants. Take it to the human and let them act in the
+child's own window. A child that refuses a laundered approval is working
+correctly and does not need fixing.
+
+### Verify a lane actually started
+
+`ps aux | grep <agent>` matches your own grep command, so it reports sessions
+that do not exist. This is not a rare edge: it will tell you three sessions are
+running when none are, and the spawn failure stays hidden until you look for
+output that never arrives.
+
+Check the working directory of each live process instead:
+
+    for p in $(pgrep -f <agent>); do
+        [ "$(readlink /proc/$p/cwd)" = "$WT" ] && echo "up: $p"
+    done
+
+Process count is not session count either. One session shows several pids, so
+counting matches overcounts. Count distinct working directories, not processes.
+
+### Working a branch that already exists
+
+The task starter creates a branch. It will not check out one that is already
+there, which is the case when you want a session on an existing PR's head.
+
+For that, initialise the worktree from the existing branch first, then open the
+tab against that directory. Do not hand-roll the terminal multiplexer's new-tab
+command with an inline script: the pane dies immediately and the failure looks
+like the child never started.
+
+### A lane is finished when its PR is accepted, not when it is opened
+
+Four conditions before you remove a lane's worktree or close its tab:
+
+1. Zero commits unmerged against the branch it was cut from
+2. Clean working tree
+3. The session is idle
+4. **No open PR from that lane still awaiting review**
+
+The fourth is the one that gets skipped, and it is the expensive one. Cleaning up
+a lane whose review has not landed yet leaves the eventual findings with nowhere
+to go, and you rebuild the worktree to fix them.
+
+Findings raised against the collected story PR get fixed in a worktree on the
+story branch, not in a revived lane worktree. The lane's job ended when its work
+merged upward.
+
+### The parent owns collection
+
+Fanning out does not divide the integration work, it concentrates it. The parent
+merges each lane upward, resolves conflicts, runs the suites on the collected
+result, and owns the final verdict. Budget for that. A story with five lanes has
+a sixth job at the end that nobody is doing in parallel.
+
+Read branch tips, not lane reports. A session that says it is blocked has
+sometimes already shipped, and a session that says it is done has sometimes
+pushed nothing.
